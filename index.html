@@ -164,7 +164,11 @@ function setFirebaseStatus(txt,ok=false){const el=$('fbStatus');if(el){el.textCo
 async function connectFirebase(cfg){
   if(!cfg?.apiKey||!cfg?.projectId)throw new Error('firebaseConfig belum lengkap');
   const {app,fs,au}=await firebaseModules();
-  firebaseApp=app.getApps().find(x=>x.name==='aurelia-mcu')||app.initializeApp(cfg,'aurelia-mcu');
+  // Always use the latest config entered by the user. Firebase app instances are cached by name,
+  // so reuse of a previous instance could keep an old/invalid API key.
+  const existingApp=app.getApps().find(x=>x.name==='aurelia-mcu');
+  if(existingApp){await app.deleteApp(existingApp);}
+  firebaseApp=app.initializeApp(cfg,'aurelia-mcu');
   firebaseDb=fs.getFirestore(firebaseApp);
   firebaseAuth=au.getAuth(firebaseApp);
   if(!firebaseAuth.currentUser)await au.signInAnonymously(firebaseAuth);
