@@ -141,27 +141,29 @@ async function dbDelete(id){const d=await openDB();return new Promise((resolve,r
 async function load(){attendance={};try{attendance=await dbLoad()}catch(e){console.warn('IndexedDB load gagal, fallback localStorage',e);try{const a=JSON.parse(localStorage.getItem(ATT_KEY)||'{}');if(a&&typeof a==='object')attendance=a}catch{}}try{localStorage.setItem(MASTER_KEY,JSON.stringify(SEED))}catch(e){console.warn('Master cache tidak tersimpan',e)}}
 async function persist(){localStorage.setItem(ATT_KEY,JSON.stringify(attendance));const values=Object.values(attendance);for(const item of values)await dbPut(item)}
 let firebaseApp=null, firebaseDb=null, firebaseAuth=null, firebaseReady=false;
+let firebaseModulesCache=null;
 async function firebaseModules(){
-  const app=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js');
-  const fs=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js');
-  const au=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js');
-  return {app,fs,au};
+  if(firebaseModulesCache)return firebaseModulesCache;
+  const urls={
+    app:'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js',
+    fs:'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js',
+    au:'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js'
+  };
+  let lastErr=null;
+  for(let attempt=1;attempt<=4;attempt++){
+    try{
+      const [app,fs,au]=await Promise.all([import(urls.app),import(urls.fs),import(urls.au)]);
+      firebaseModulesCache={app,fs,au};
+      return firebaseModulesCache;
+    }catch(e){
+      lastErr=e;
+      firebaseModulesCache=null;
+      if(attempt<4)await new Promise(r=>setTimeout(r,1500*attempt));
+    }
+  }
+  throw lastErr||new Error('Firebase SDK gagal dimuat');
 }
-const DEFAULT_FIREBASE_CONFIG={
-  apiKey:"AIzaSyAVehPdA3xD_HyG5SVEMnxCtHNVZCgbyc",
-  authDomain:"aurelia-mcu.firebaseapp.com",
-  projectId:"aurelia-mcu",
-  storageBucket:"aurelia-mcu.firebasestorage.app",
-  messagingSenderId:"581461962474",
-  appId:"1:581461962474:web:e0d8b95c5227706818b193",
-  measurementId:"G-7PRQ3LJTN5"
-};
-function firebaseConfigSaved(){
-  try{
-    const saved=localStorage.getItem('RANIA_FIREBASE_CONFIG');
-    return saved?JSON.parse(saved):DEFAULT_FIREBASE_CONFIG;
-  }catch{return DEFAULT_FIREBASE_CONFIG}
-}
+function firebaseConfigSaved(){try{return JSON.parse(localStorage.getItem('RANIA_FIREBASE_CONFIG')||'null')}catch{return null}}
 function setFirebaseStatus(txt,ok=false){const el=$('fbStatus');if(el){el.textContent='● '+txt;el.style.borderColor=ok?'#1b8f68':'#39496f';el.style.color=ok?'#73f0c5':'#9eafd0'}}
 async function connectFirebase(cfg){
   if(!cfg?.apiKey||!cfg?.projectId){throw new Error('firebaseConfig belum lengkap')}
@@ -180,14 +182,14 @@ async function connectFirebase(cfg){
   else {const cloudMaster=[];empSnap.forEach(d=>cloudMaster.push(d.data()));if(cloudMaster.length)master=cloudMaster;}
   localStorage.setItem(ATT_KEY,JSON.stringify(attendance));buildFilters();render();
 }
-window.cloudPut=async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
-window.cloudDelete=async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
-window.openFirebaseSettings=()=>{$('fbConfig').value=JSON.stringify(firebaseConfigSaved(),null,2);$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
+async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
+async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
+window.openFirebaseSettings=()=>{$('fbConfig').value=localStorage.getItem('RANIA_FIREBASE_CONFIG')||'';$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
 window.closeFirebaseSettings=()=>$('fbModal').classList.remove('show');
 window.connectFirebaseFromUI=async()=>{try{const cfg=JSON.parse($('fbConfig').value);localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(cfg));$('fbMsg').textContent='Menghubungkan...';await connectFirebase(cfg);$('fbMsg').textContent='Firebase aktif. Data transaksi sekarang disinkronkan ke Firestore.'}catch(e){firebaseReady=false;setFirebaseStatus('FIREBASE ERROR');$('fbMsg').textContent='Gagal: '+e.message}};
-window.clearFirebaseConfig=()=>{localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
+window.clearFirebaseConfig=()=>{localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;firebaseModulesCache=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
 
-async function init(){await load();const cfg=firebaseConfigSaved();if(cfg){try{await connectFirebase(cfg)}catch(e){console.warn('Firebase belum tersambung',e);setFirebaseStatus('FIREBASE OFFLINE')}}const dates=master.map(x=>x.schedule).filter(Boolean).sort();$('date').value=dates[0]||'2026-10-05';buildFilters();buildMedical();render();setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('id-ID')},1000)}
+async function init(){await load();const cfg=firebaseConfigSaved();if(cfg){let connected=false;for(let attempt=1;attempt<=3&&!connected;attempt++){try{await connectFirebase(cfg);connected=true}catch(e){console.warn('Firebase belum tersambung, percobaan '+attempt,e);firebaseReady=false;if(attempt<3)await new Promise(r=>setTimeout(r,2000*attempt))}}if(!connected)setFirebaseStatus('FIREBASE OFFLINE')}const dates=master.map(x=>x.schedule).filter(Boolean).sort();$('date').value=dates[0]||'2026-10-05';buildFilters();buildMedical();render();setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('id-ID')},1000)}
 function buildFilters(){const cs=[...new Set(master.map(x=>x.company).filter(Boolean))].sort();const companyLabel=x=>x==='SDI'?'GSDI':x==='SYM'?'GSYM':x; $('company').innerHTML='<option value="">GSDI + GSYM</option>'+cs.map(x=>`<option value="${esc(x)}">${esc(companyLabel(x))}</option>`).join('');const af=[...new Set(master.map(x=>x.afd).filter(Boolean))].sort();$('afd').innerHTML='<option value="">Semua</option>'+af.map(x=>`<option>${esc(x)}</option>`).join('');}
 function targetList(){let a=[...master];if($('mode').value==='date')a=a.filter(x=>x.schedule===$('date').value);const c=$('company').value;if(c)a=a.filter(x=>x.company===c);const af=$('afd').value;if(af)a=a.filter(x=>x.afd===af);return a}
 function render(){const list=targetList();let done=0,pr=0,ab=0;list.forEach(x=>{const a=attendance[key(x.nik,x.schedule)]||{};if(a.status==='MCU SELESAI')done++;else if(a.status==='HADIR / PROSES')pr++;else if(a.status==='TIDAK HADIR')ab++});const pct=list.length?Math.round(done/list.length*100):0;$('pct').textContent=pct+'%';$('ringPct').textContent=pct+'%';$('ring').style.setProperty('--pct',pct+'%');$('present').textContent=pr;$('done').textContent=done;$('pending').textContent=Math.max(0,list.length-done-pr-ab);$('absent').textContent=ab;$('count').textContent=list.length.toLocaleString('id-ID')+' peserta';$('dateLabel').textContent=fmt($('date').value);renderTable();renderChart(list);renderAfd(list)}
