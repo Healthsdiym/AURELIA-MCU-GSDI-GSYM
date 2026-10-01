@@ -180,9 +180,9 @@ async function connectFirebase(cfg){
   else {const cloudMaster=[];empSnap.forEach(d=>cloudMaster.push(d.data()));if(cloudMaster.length)master=cloudMaster;}
   localStorage.setItem(ATT_KEY,JSON.stringify(attendance));buildFilters();render();
 }
-window.cloudPut=async function(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
-window.cloudDelete=async function(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
-window.openFirebaseSettings=()=>{$('fbConfig').value=localStorage.getItem('RANIA_FIREBASE_CONFIG')||'';$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
+window.cloudPut=async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
+window.cloudDelete=async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
+window.openFirebaseSettings=()=>{$('fbConfig').value=JSON.stringify(firebaseConfigSaved(),null,2);$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
 window.closeFirebaseSettings=()=>$('fbModal').classList.remove('show');
 window.connectFirebaseFromUI=async()=>{try{const cfg=JSON.parse($('fbConfig').value);localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(cfg));$('fbMsg').textContent='Menghubungkan...';await connectFirebase(cfg);$('fbMsg').textContent='Firebase aktif. Data transaksi sekarang disinkronkan ke Firestore.'}catch(e){firebaseReady=false;setFirebaseStatus('FIREBASE ERROR');$('fbMsg').textContent='Gagal: '+e.message}};
 window.clearFirebaseConfig=()=>{localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
