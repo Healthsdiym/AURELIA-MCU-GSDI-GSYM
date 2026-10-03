@@ -1,7 +1,0 @@
-{
-  "name": "AURELIA-MCU-GSDI-GSYM",
-  "fix": "Firebase legacy MCU schedule date correction",
-  "rule": "If cloud employees contains 2026-10-04, shift all schedules +1 calendar day (05->04 legacy UTC bug) and write corrected schedules back to Firestore.",
-  "source_index_bytes": 2713466,
-  "note": "Attendance data is not deleted or cleared."
-}
