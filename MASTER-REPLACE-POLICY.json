@@ -1,7 +1,0 @@
-{
-  "source": "MCU SDI_SYM-2026 FIX (present).xlsx",
-  "employees": "replace authoritative master",
-  "attendance": "preserved; never deleted during master replacement",
-  "schedule": "reference only",
-  "actual_attendance": "transaction timestamp"
-}
