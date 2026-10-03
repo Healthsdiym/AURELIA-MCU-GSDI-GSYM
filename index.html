@@ -140,7 +140,7 @@ async function dbPut(item){const d=await openDB();return new Promise((resolve,re
 async function dbDelete(id){const d=await openDB();return new Promise((resolve,reject)=>{const tx=d.transaction('attendance','readwrite');tx.objectStore('attendance').delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
 async function load(){attendance={};try{attendance=await dbLoad()}catch(e){console.warn('IndexedDB load gagal, fallback localStorage',e);try{const a=JSON.parse(localStorage.getItem(ATT_KEY)||'{}');if(a&&typeof a==='object')attendance=a}catch{}}try{localStorage.setItem(MASTER_KEY,JSON.stringify(SEED))}catch(e){console.warn('Master cache tidak tersimpan',e)}}
 async function persist(){localStorage.setItem(ATT_KEY,JSON.stringify(attendance));const values=Object.values(attendance);for(const item of values)await dbPut(item)}
-let firebaseApp=null, firebaseDb=null, firebaseAuth=null, firebaseReady=false;
+let firebaseApp=null, firebaseDb=null, firebaseAuth=null, firebaseReady=false, firebaseUnsubAttendance=null;
 async function firebaseModules(){
   const app=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js');
   const fs=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js');
@@ -166,13 +166,34 @@ async function connectFirebase(cfg){
   if(empSnap.empty){for(let i=0;i<master.length;i+=400){const b=fs.writeBatch(firebaseDb);master.slice(i,i+400).forEach(x=>b.set(fs.doc(firebaseDb,'employees',x.nik),x,{merge:true}));await b.commit();}}
   else {const cloudMaster=[];empSnap.forEach(d=>cloudMaster.push(d.data()));if(cloudMaster.length)master=cloudMaster;}
   localStorage.setItem(ATT_KEY,JSON.stringify(attendance));buildFilters();render();
+  // Realtime listener: every device receives add/update/delete immediately, no refresh required.
+  if(firebaseUnsubAttendance){try{firebaseUnsubAttendance()}catch(e){console.warn('unsubscribe attendance gagal',e)}}
+  firebaseUnsubAttendance=fs.onSnapshot(fs.collection(firebaseDb,'attendance'),async changes=>{
+    let changed=false;
+    for(const ch of changes.docChanges()){
+      const id=ch.doc.id;
+      if(ch.type==='removed'){
+        if(attendance[id]){delete attendance[id];changed=true;}
+        try{await dbDelete(id)}catch(e){console.warn('IndexedDB delete realtime gagal',e)}
+      }else{
+        const data=ch.doc.data();
+        attendance[id]=data;
+        try{await dbPut(data)}catch(e){console.warn('IndexedDB update realtime gagal',e)}
+        changed=true;
+      }
+    }
+    if(changed){
+      localStorage.setItem(ATT_KEY,JSON.stringify(attendance));
+      render();
+    }
+  },err=>{console.warn('Realtime Firestore attendance gagal',err);});
 }
 window.cloudPut=async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
 window.cloudDelete=async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
 window.openFirebaseSettings=()=>{$('fbConfig').value=JSON.stringify(firebaseConfigSaved(),null,2);$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
 window.closeFirebaseSettings=()=>$('fbModal').classList.remove('show');
 window.connectFirebaseFromUI=async()=>{try{const cfg=JSON.parse($('fbConfig').value);localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(cfg));$('fbMsg').textContent='Menghubungkan...';await connectFirebase(cfg);$('fbMsg').textContent='Firebase aktif. Data transaksi sekarang disinkronkan ke Firestore.'}catch(e){firebaseReady=false;setFirebaseStatus('FIREBASE ERROR');$('fbMsg').textContent='Gagal: '+e.message}};
-window.clearFirebaseConfig=()=>{localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
+window.clearFirebaseConfig=()=>{if(firebaseUnsubAttendance){try{firebaseUnsubAttendance()}catch(e){}}firebaseUnsubAttendance=null;localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
 
 async function init(){await load();const cfg=firebaseConfigSaved();try{await connectFirebase(cfg)}catch(e){console.warn('Firebase belum tersambung',e);setFirebaseStatus('FIREBASE OFFLINE')}const dates=master.map(x=>x.schedule).filter(Boolean).sort();$('date').value=dates[0]||'2026-10-05';buildFilters();buildMedical();render();setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('id-ID')},1000)}
 function buildFilters(){const cs=[...new Set(master.map(x=>x.company).filter(Boolean))].sort();const companyLabel=x=>x==='SDI'?'GSDI':x==='SYM'?'GSYM':x; $('company').innerHTML='<option value="">GSDI + GSYM</option>'+cs.map(x=>`<option value="${esc(x)}">${esc(companyLabel(x))}</option>`).join('');const af=[...new Set(master.map(x=>x.afd).filter(Boolean))].sort();$('afd').innerHTML='<option value="">Semua</option>'+af.map(x=>`<option>${esc(x)}</option>`).join('');}
