@@ -141,35 +141,14 @@ async function dbDelete(id){const d=await openDB();return new Promise((resolve,r
 async function load(){attendance={};try{attendance=await dbLoad()}catch(e){console.warn('IndexedDB load gagal, fallback localStorage',e);try{const a=JSON.parse(localStorage.getItem(ATT_KEY)||'{}');if(a&&typeof a==='object')attendance=a}catch{}}try{localStorage.setItem(MASTER_KEY,JSON.stringify(SEED))}catch(e){console.warn('Master cache tidak tersimpan',e)}}
 async function persist(){localStorage.setItem(ATT_KEY,JSON.stringify(attendance));const values=Object.values(attendance);for(const item of values)await dbPut(item)}
 let firebaseApp=null, firebaseDb=null, firebaseAuth=null, firebaseReady=false;
-const DEFAULT_FIREBASE_CONFIG={
-  apiKey:'AIzaSyAVehPdA3xD_HyG5SVEMnxCtHNVZCgbyc',
-  authDomain:'aurelia-mcu.firebaseapp.com',
-  projectId:'aurelia-mcu',
-  storageBucket:'aurelia-mcu.firebasestorage.app',
-  messagingSenderId:'581461962474',
-  appId:'1:581461962474:web:e0d8b95c5227706818b193',
-  measurementId:'G-7PRQ3LJTN5'
-};
-let firebaseModulesCache=null;
 async function firebaseModules(){
-  if(firebaseModulesCache)return firebaseModulesCache;
-  let lastErr;
-  for(let i=0;i<4;i++){
-    try{
-      const app=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js');
-      const fs=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js');
-      const au=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js');
-      return firebaseModulesCache={app,fs,au};
-    }catch(e){lastErr=e;if(i<3)await new Promise(r=>setTimeout(r,1500*(i+1)));}
-  }
-  throw lastErr||new Error('Firebase SDK gagal dimuat');
+  const app=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js');
+  const fs=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js');
+  const au=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js');
+  return {app,fs,au};
 }
-function firebaseConfigSaved(){
-  try{
-    const saved=JSON.parse(localStorage.getItem('RANIA_FIREBASE_CONFIG')||'null');
-    return saved&&saved.apiKey&&saved.projectId?{...DEFAULT_FIREBASE_CONFIG,...saved}:DEFAULT_FIREBASE_CONFIG;
-  }catch{return DEFAULT_FIREBASE_CONFIG}
-}
+const DEFAULT_FIREBASE_CONFIG={apiKey:'AIzaSyAVehPdA3xD_HyG5SVEMnxnCtHNVZCgbyc',authDomain:'aurelia-mcu.firebaseapp.com',projectId:'aurelia-mcu',storageBucket:'aurelia-mcu.firebasestorage.app',messagingSenderId:'581461962474',appId:'1:581461962474:web:e0d8b95c5227706818b193',measurementId:'G-7PRQ3LJTN5'};
+function firebaseConfigSaved(){try{const saved=JSON.parse(localStorage.getItem('RANIA_FIREBASE_CONFIG')||'null');if(saved?.apiKey===DEFAULT_FIREBASE_CONFIG.apiKey&&saved?.projectId===DEFAULT_FIREBASE_CONFIG.projectId)return {...DEFAULT_FIREBASE_CONFIG,...saved};localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(DEFAULT_FIREBASE_CONFIG));return DEFAULT_FIREBASE_CONFIG}catch{localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(DEFAULT_FIREBASE_CONFIG));return DEFAULT_FIREBASE_CONFIG}}
 function setFirebaseStatus(txt,ok=false){const el=$('fbStatus');if(el){el.textContent='● '+txt;el.style.borderColor=ok?'#1b8f68':'#39496f';el.style.color=ok?'#73f0c5':'#9eafd0'}}
 async function connectFirebase(cfg){
   if(!cfg?.apiKey||!cfg?.projectId){throw new Error('firebaseConfig belum lengkap')}
@@ -188,9 +167,9 @@ async function connectFirebase(cfg){
   else {const cloudMaster=[];empSnap.forEach(d=>cloudMaster.push(d.data()));if(cloudMaster.length)master=cloudMaster;}
   localStorage.setItem(ATT_KEY,JSON.stringify(attendance));buildFilters();render();
 }
-async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
-async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
-window.openFirebaseSettings=()=>{$('fbConfig').value=localStorage.getItem('RANIA_FIREBASE_CONFIG')||'';$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
+window.cloudPut=async function cloudPut(item){if(!firebaseReady||!firebaseDb)return;const {doc,setDoc}=await firebaseModules().then(x=>x.fs);await setDoc(doc(firebaseDb,'attendance',item.id),item,{merge:true})}
+window.cloudDelete=async function cloudDelete(id){if(!firebaseReady||!firebaseDb)return;const {doc,deleteDoc}=await firebaseModules().then(x=>x.fs);await deleteDoc(doc(firebaseDb,'attendance',id))}
+window.openFirebaseSettings=()=>{$('fbConfig').value=JSON.stringify(firebaseConfigSaved(),null,2);$('fbMsg').textContent=firebaseReady?'Terhubung ke Firestore.':'Belum terhubung.';$('fbModal').classList.add('show')};
 window.closeFirebaseSettings=()=>$('fbModal').classList.remove('show');
 window.connectFirebaseFromUI=async()=>{try{const cfg=JSON.parse($('fbConfig').value);localStorage.setItem('RANIA_FIREBASE_CONFIG',JSON.stringify(cfg));$('fbMsg').textContent='Menghubungkan...';await connectFirebase(cfg);$('fbMsg').textContent='Firebase aktif. Data transaksi sekarang disinkronkan ke Firestore.'}catch(e){firebaseReady=false;setFirebaseStatus('FIREBASE ERROR');$('fbMsg').textContent='Gagal: '+e.message}};
 window.clearFirebaseConfig=()=>{localStorage.removeItem('RANIA_FIREBASE_CONFIG');firebaseReady=false;firebaseDb=null;firebaseAuth=null;setFirebaseStatus('FIREBASE OFFLINE');$('fbConfig').value='';$('fbMsg').textContent='Firebase dilepas. Data lokal tetap ada.'};
